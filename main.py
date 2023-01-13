@@ -1,11 +1,18 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[ ]:
+
+
 #from tkinter import *
-from tkinter import Tk, Menu, Scrollbar, Frame, BOTH, LEFT, RIGHT, BOTTOM, TOP, HORIZONTAL, VERTICAL, NONE, INSERT, X, Y
+from tkinter import Tk, Menu, Scrollbar, Frame, Label, Canvas, BOTH, LEFT, RIGHT, BOTTOM, TOP, HORIZONTAL, VERTICAL, NONE, INSERT, X, Y
 from tkinter import ttk
+#from ttkthemes import ThemedTk, ThemedStyle
 from tkinter import messagebox
 from tkinter import filedialog
 from tkinter.scrolledtext import ScrolledText
 from uuid import uuid4
-from codecs import decode
+from customText import CustomText
 
 
 #win.minsize(width=50, height=50)
@@ -67,6 +74,7 @@ class App:
         return None
     def createFrame(self,fullFile='untitled',text=''):
         textFrame = TextFrame(self,fullFile,text)
+        textFrame.setPatterns(fullFile.split('.')[-1])
         self.__open_files+=[textFrame.file]
     def createNewFile(self,*args):
         self.createFrame()
@@ -79,7 +87,7 @@ class App:
         if (f is None): return
         with open(self.extractPath(f),'r',encoding='UTF-8') as my_file:
             for i in my_file.readlines():
-                text+=f"{i}\n"
+                text+=f"{i}"
             else: 
                 text = text.rstrip('\n')
         self.createFrame(f.name,text)
@@ -136,12 +144,13 @@ class App:
         self.win.mainloop()
 
 class File:
-    def __init__(self,file_dict:dict,app:App):
+    def __init__(self,file_dict:dict,app:App, text_frame):
         self.__id = str(uuid4())
         self.__frame = file_dict['file']
         self.__file_name = extractFile(file_dict)['file_name']
         self.__file_path = extractFile(file_dict)['file_path']
         self.__app = app
+        self.__text_frame = text_frame
     @property
     def id(self) -> str:
         return self.__id
@@ -157,35 +166,37 @@ class File:
     @property
     def app(self) -> App:
         return self.__app
+    @property
+    def text_frame(self):
+        return self.__text_frame
     @file_name.setter
     def file_name(self,value):
         conValue=extractFile({'file_path':value})['file_name']
         self.__file_name=conValue
-        text=self.frame.winfo_children()[0].winfo_children()[1].get('1.0','end')
+        text=self.frame.winfo_children()[1].winfo_children()[1].get('1.0','end')
 
-        frame1=Frame(self.app.notebook)
-        textbox = ScrolledText(master=frame1, width=1, height=1,wrap=NONE)
-        textbox.pack(fill=BOTH, side=TOP,expand=True)
-        scrollbar = Scrollbar(master=frame1,orient=HORIZONTAL,takefocus=0,command=textbox.xview)
-        scrollbar.pack(fill=X,side=BOTTOM)
-        textbox.config(xscrollcommand=scrollbar.set,font=bfont)
-        textbox.insert(INSERT,text)
+        textFrame = TextFrame(self.app,value,text)
         index=self.app.notebook.index(self.frame)
         maxIndex=self.app.notebook.index('end')-1
         self.app.notebook.forget(self.app.notebook.index(self.frame))
         if (index==0 or index==maxIndex):
-            self.app.notebook.add(frame1,text=f'{conValue}')
+            self.app.notebook.add(textFrame.frame,text=f'{conValue}')
         else:
-            self.app.notebook.insert(index,frame1,text=f'{conValue}')
+            self.app.notebook.insert(index,textFrame.frame,text=f'{conValue}')
         self.app.notebook.select(index)
         self.app.win.title(f"Notatnik - {conValue}")
-        self.frame=frame1
+        textFrame.setPatterns(conValue.split('.')[-1])
+        self.frame=textFrame.frame
+        self.text_frame=textFrame
     @file_path.setter
     def file_path(self,value):
         self.__file_path=value
     @frame.setter
     def frame(self,value):
         self.__frame=value
+    @text_frame.setter
+    def text_frame(self,value):
+        self.__text_frame = value
     def __repr__(self):
         id=self.id
         file_name=self.file_name
@@ -207,30 +218,42 @@ class File:
         if (createdFile is None): return
         createdFile = App.extractPath(createdFile)
         with open(createdFile,'w',encoding='utf8') as my_file:
-            text = self.frame.winfo_children()[0].winfo_children()[1].get('1.0','end')
-            my_file.write(text)
+            text = self.frame.winfo_children()[1].winfo_children()[1].get('1.0','end')
+            my_file.write(text.rstrip('\n'))
         self.file_name=extractFile({'file_path':createdFile})['file_name']
         self.file_path=extractFile({'file_path':createdFile})['file_path']
+
+
 
 class TextFrame:
     def __init__(self,appInstance:App,fullFilePath:str,text:str):
         frame1=Frame(appInstance.notebook)
-        textbox = ScrolledText(master=frame1, width=1, height=1,wrap=NONE)
+        #https://stackoverflow.com/questions/24896747/how-to-display-line-numbers-in-tkinter-text-widget
+        canvas = Canvas(master=frame1, width=30, bg='#cccccc', highlightbackground='#555555', highlightthickness=0)
+        canvas.pack(side=LEFT, fill=Y)
+        textbox = CustomText(master=frame1, parent=self, width=1, height=1,wrap=NONE, yscrollcommand=self.scrollingEvent)
         textbox.pack(fill=BOTH, side=TOP,expand=True)
         scrollbar = Scrollbar(master=frame1,orient=HORIZONTAL,takefocus=0,command=textbox.xview)
         scrollbar.pack(fill=X,side=BOTTOM)
-        textbox.config(xscrollcommand=scrollbar.set,font=bfont)
+        textbox.config(xscrollcommand=scrollbar.set,font=bfont,foreground='black')
         textbox.insert(INSERT,text)
+        textbox.tag_config("green", foreground="green")
+        textbox.tag_config("dark_blue", foreground="blue")
+        textbox.tag_config("purple", foreground="purple")
+        textbox.tag_config("red", foreground="red")
+        textbox.bind('<<TextModified>>',self.update_all)
         file_name=extractFile({'file_path':fullFilePath})['file_name']
         appInstance.notebook.add(frame1,text=f'{file_name}')
         appInstance.notebook.select(appInstance.notebook.index(frame1))
-        newFile = File({'file':frame1,'file_path':fullFilePath},appInstance)
+        newFile = File({'file':frame1,'file_path':fullFilePath},appInstance,self)
         appInstance.win.title(f"Notatnik - {file_name}")
         appInstance.open_files+=[newFile]
         self.__appInstance = appInstance
         self.__textbox = textbox
         self.__scrollbar = scrollbar
         self.__file = newFile
+        self.__patterns = {}
+        self.__canvas = canvas
     @property
     def file(self) -> File:
         return self.__file
@@ -249,6 +272,46 @@ class TextFrame:
     @property
     def scrollbar(self) -> Scrollbar:
         return self.__scrollbar
-    
+    def setPatterns(self,pattern):
+        self.__patterns = {}
+        if (pattern == 'py'):
+            self.setPyPatterns()
+
+    def setPyPatterns(self):
+        self.__patterns = {
+            'green':['range','str','int','dict', 'float', 'enumerate'],
+            'red':[],
+            'dark_blue':['def','class', 'False','None', 'True', 'and', 'is', 'global', 'lambda', 'nonlocal', 'not', 'or'],
+            'purple':['if', 'for', 'as', 'assert', 'async', 'await', 'break', 'continue', 'in', 'del', 'elif', 'else', 'except', 'finally', 'from', 'import', 'pass', 'raise', 'return', 'try', 'while', 'with', 'yield']
+        }
+        self.update_all()
+    def resetPatterns(self):
+        self.__patterns = {}
+    def highlight_text(self,*args):
+        for key,value in self.__patterns.items():
+            self.textbox.clean_highlights(key)
+            for text in value:
+                self.textbox.highlight_all(fr"\b{text}\b", f"{key}")
+        self.textbox.highlight_comments('green', self.__patterns.keys())
+    def update_line_numbers(self, *args):
+        self.__canvas.delete("all")
+        i = self.textbox.index('@0,0')
+        self.textbox.update()                    #FIX: adding line
+        while True:
+            dline = self.textbox.dlineinfo(i)
+            if dline:
+                y = dline[1]
+                linenum = i[:len(i)-2]
+                self.__canvas.create_text(1, y, anchor="nw", text=linenum, fill='#000000')
+                i = self.textbox.index('{0}+1line'.format(i))  #FIX
+            else:
+                break
+    def scrollingEvent(self,*args, **kwargs):
+        self.update_line_numbers()
+        self.textbox.yview(args[0],args[1])
+    def update_all(self, *args):
+        self.update_line_numbers()
+        self.highlight_text()
 
 App().buildApp()
+
